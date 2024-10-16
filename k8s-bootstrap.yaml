@@ -1,0 +1,6 @@
+---
+- name: CNCF Kubernetes Cluster Install
+  hosts: all
+  become: true
+  roles:
+    - ansible-cncf-k8s
