@@ -1,0 +1,161 @@
+---
+- name: Gather facts about the host
+  ansible.builtin.setup:
+
+- name: Templating out Kubernetes sysctl file
+  ansible.builtin.template:
+    src: kubernetes.conf.j2
+    dest: /etc/sysctl.d/kubernetes.conf
+    owner: root
+    group: root
+    mode: '0644'
+
+- name: Apply sysctl settings
+  ansible.builtin.command: sysctl --system
+  become: true
+
+- name: Download containerd tarball
+  ansible.builtin.get_url:
+    url: "https://github.com/containerd/containerd/releases/download/v{{ containerd_version }}/containerd-{{ containerd_version }}-linux-amd64.tar.gz"
+    dest: "/tmp/containerd-{{ containerd_version }}-linux-amd64.tar.gz"
+
+- name: Extract containerd tarball
+  ansible.builtin.unarchive:
+    src: "/tmp/containerd-{{ containerd_version }}-linux-amd64.tar.gz"
+    dest: /tmp/
+    remote_src: yes
+
+- name: Move binaries from /tmp/bin to /usr/local/bin
+  ansible.builtin.find:
+    paths: /tmp/bin
+    file_type: file
+  register: binaries_to_move
+
+- name: Move each binary to /usr/local/bin
+  ansible.builtin.command:
+    cmd: "mv {{ item.path }} {{ containerd_install_location }}/"
+  loop: "{{ binaries_to_move.files }}"
+  become: true
+  when: binaries_to_move.matched > 0
+
+- name: Remove containerd tarball
+  ansible.builtin.file:
+    path: "/tmp/containerd-{{ containerd_version }}-linux-amd64.tar.gz"
+    state: absent
+
+- name: Add containerd service file
+  ansible.builtin.template:
+    src: containerd-service-file.j2
+    dest: /etc/systemd/system/containerd.service
+    owner: root
+    group: root
+    mode: '0644'
+
+- name: Create containerd directory if it does not exist
+  ansible.builtin.file:
+    path: /etc/containerd
+    state: directory
+    mode: '0755'
+    owner: root
+    group: root
+
+- name: Template out containerd config file
+  ansible.builtin.template:
+    src: config.toml.j2
+    dest: /etc/containerd/config.toml
+    owner: root
+    group: root
+    mode: '0644'
+
+- name: Start containerd service
+  ansible.builtin.systemd:
+    name: containerd
+    state: started
+    enabled: yes
+
+- name: Append IP and hostname to /etc/hosts
+  ansible.builtin.lineinfile:
+    path: /etc/hosts
+    line: "{{ hostvars[groups['kube_masters'][0]].ansible_default_ipv4.address }} k8scp"
+    state: present
+
+- name: Download kubectl binary
+  ansible.builtin.get_url:
+    url: "https://dl.k8s.io/release/{{ k8s_release_version }}/bin/linux/amd64/kubectl"
+    dest: "/tmp/kubectl"
+    mode: '0755'
+
+- name: Download kubelet binary
+  ansible.builtin.get_url:
+    url: "https://dl.k8s.io/release/{{ k8s_release_version }}/bin/linux/amd64/kubelet"
+    dest: "/tmp/kubelet"
+    mode: '0755'
+
+- name: Download kubeadm binary
+  ansible.builtin.get_url:
+    url: "https://dl.k8s.io/release/{{ k8s_release_version }}/bin/linux/amd64/kubeadm"
+    dest: "/tmp/kubeadm"
+    mode: '0755'
+
+- name: Set executable permissions for kubectl
+  ansible.builtin.file:
+    path: "/tmp/kubectl"
+    mode: '0775'
+    owner: "{{ kubernetes_user }}"
+    state: file
+
+- name: Set executable permissions for kubelet
+  ansible.builtin.file:
+    path: "/tmp/kubelet"
+    mode: '0775'
+    owner: "{{ kubernetes_user }}"
+    state: file
+
+- name: Set executable permissions for kubeadm
+  ansible.builtin.file:
+    path: "/tmp/kubeadm"
+    mode: '0775'
+    owner: "{{ kubernetes_user }}"
+    state: file
+
+- name: Move kubectl to /usr/local/bin
+  ansible.builtin.command:
+    cmd: mv /tmp/kubectl {{ k8s_binary_location }}
+
+- name: Move kubelet to /usr/local/bin
+  ansible.builtin.command:
+    cmd: mv /tmp/kubelet {{ k8s_binary_location }}
+
+- name: Move kubeadm to /usr/local/bin
+  ansible.builtin.command:
+    cmd: mv /tmp/kubeadm {{ k8s_binary_location }}
+
+- name: Add kubelet-service-file template file
+  ansible.builtin.template:
+    src: kubelet-service-file.j2
+    dest: /etc/systemd/system/kubelet.service
+    owner: root
+    group: root
+    mode: '0644'
+
+- name: Reload systemd to recognize new kubelet service file
+  ansible.builtin.systemd:
+    daemon_reload: yes
+
+- name: Enable kubelet service
+  ansible.builtin.systemd:
+    name: kubelet
+    enabled: yes
+
+- name: Add kubectl configurations to .bashrc
+  ansible.builtin.lineinfile:
+    path: "/home/{{ kubernetes_user }}/.bashrc"
+    line: "{{ item }}"
+    create: no
+    state: present
+  loop:
+    - "source <(kubectl completion bash)"
+    - "alias k='/usr/bin/kubectl'"
+    - "complete -o default -F __start_kubectl k"
+  become: true
+  become_user: "{{kubernetes_user}}"

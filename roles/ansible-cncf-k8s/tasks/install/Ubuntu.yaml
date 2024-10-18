@@ -1,0 +1,62 @@
+---
+- name: Installing Ubuntu dependencies for apt
+  ansible.builtin.apt:
+    name:
+      - gpg
+      - vim
+      - git
+      - wget
+      - curl
+      - socat
+      - conntrack
+      - apt-transport-https
+      - software-properties-common
+      - lsb-release
+      - ca-certificates
+      - htop
+      - tree
+      - net-tools
+      - mlocate
+      - bash-completion
+      - python3-pip
+      - python3-yaml
+      - python3-kubernetes
+    state: present
+    update_cache: true
+  when:
+    - ansible_os_family == 'Ubuntu'
+
+- name: Download crictl tarball
+  ansible.builtin.get_url:
+    url: "https://github.com/kubernetes-sigs/cri-tools/releases/download/{{ crictl_version }}/crictl-{{ crictl_version }}-linux-amd64.tar.gz"
+    dest: "/tmp/crictl-{{ crictl_version }}-linux-amd64.tar.gz"
+
+- name: Extract crictl to /usr/local/bin
+  ansible.builtin.unarchive:
+    src: "/tmp/crictl-{{ crictl_version }}-linux-amd64.tar.gz"
+    dest: "/usr/local/bin"
+    remote_src: yes
+
+- name: Remove crictl tarball
+  ansible.builtin.file:
+    path: "/tmp/crictl-{{ crictl_version }}-linux-amd64.tar.gz"
+    state: absent
+
+- name: Turn swap off
+  ansible.builtin.command: swapoff -a
+  when: ansible_swaptotal_mb > 0
+
+- name: Load kernel modules
+  ansible.builtin.modprobe:
+    name: "{{ item }}"
+  loop:
+    - overlay
+    - br_netfilter
+
+- name: Display system architecture
+  ansible.builtin.debug:
+    var: ansible_architecture
+
+- name: Display release codename
+  ansible.builtin.debug:
+    var: ansible_distribution_release
