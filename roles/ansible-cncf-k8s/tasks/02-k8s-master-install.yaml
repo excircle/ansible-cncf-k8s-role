@@ -15,6 +15,33 @@
     group: root
     mode: '0644'
 
+# Create kubelet-config & kubelet.conf file
+- name: Check if kubelet-config.yaml exists
+  ansible.builtin.stat:
+    path: /etc/kubernetes/kubelet-config.yaml
+  register: kubelet_config
+
+- name: Create kubelet-config tmp file if not exist
+  ansible.builtin.command: "{{ k8s_binary_location }}/kubeadm init phase kubelet-start --config=/etc/kubernetes/kubeadm-config.yaml --dry-run"
+  become: true
+  when: not kubelet_config.stat.exists
+
+- name: Find the kubelet-config.yaml in /etc/kubernetes/tmp
+  ansible.builtin.find:
+    paths: /etc/kubernetes/tmp
+    patterns: "config.yaml"
+    recurse: yes
+    file_type: file
+  register: kubelet_tmp_file
+  become: true
+
+- name: Move kubelet config to /etc/kubernetes/kubelet-config.yaml if not exists
+  ansible.builtin.command: mv "{{ kubelet_tmp_file.files[0].path }}" /etc/kubernetes/kubelet-config.yaml
+  when:
+    - kubelet_tmp_file.matched > 0  # Ensure a file was found
+    - not kubelet_config.stat.exists  # Ensure kubelet-config.yaml does not exist
+  become: true
+
 - name: Check if kubeadm-config.yaml exists
   ansible.builtin.stat:
     path: /etc/kubernetes/kubeadm-config.yaml
@@ -39,12 +66,14 @@
 
 - name: Check if kubeadm-join.sh already exists
   delegate_to: localhost
+  become: false
   ansible.builtin.stat:
     path: "{{kubernetes_join_script}}"
   register: kubeadm_join_script
 
 - name: Create kubeadm-join.sh
   delegate_to: localhost
+  become: false
   run_once: true
   ansible.builtin.copy:
     content: "{{ kubeadm_results.stdout_lines[-2:] | join('\n') }}"
@@ -85,5 +114,8 @@
     dest: "{{ kubernetes_kube_config_location }}"
     flat: yes
   run_once: true
-  delegate_to: "{{ hostvars[groups['kube_masters'][0]].ansible_default_ipv4.address }}"
+  delegate_to: "{{ hostvars[groups['kube_masters'][0]].ansible_host }}"
+  vars:
+    ansible_ssh_user: "{{ hostvars[groups['kube_masters'][0]].ansible_user }}"
+    ansible_ssh_private_key_file: "{{ hostvars[groups['kube_masters'][0]].ansible_ssh_private_key_file }}"
   when: kube_config_file.stat.exists

@@ -118,15 +118,15 @@
     owner: "{{ kubernetes_user }}"
     state: file
 
-- name: Move kubectl to /usr/local/bin
+- name: Move kubectl to k8s binary location
   ansible.builtin.command:
     cmd: mv /tmp/kubectl {{ k8s_binary_location }}
 
-- name: Move kubelet to /usr/local/bin
+- name: Move kubelet to k8s binary location
   ansible.builtin.command:
     cmd: mv /tmp/kubelet {{ k8s_binary_location }}
 
-- name: Move kubeadm to /usr/local/bin
+- name: Move kubeadm to k8s binary location
   ansible.builtin.command:
     cmd: mv /tmp/kubeadm {{ k8s_binary_location }}
 

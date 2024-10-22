@@ -3,8 +3,9 @@
 kubernetes_version: 1.27.1-00
 kubernetes_user: ubuntu
 kubernetes_join_script: /Users/alexanderkalaj/Documents/github/ansible-cncf-k8s-role/roles/ansible-cncf-k8s/kubeadm-join.sh
+kubernetes_kube_config_location: /Users/alexanderkalaj/Documents/github/ansible-cncf-k8s-role/roles/ansible-cncf-k8s/kube-config
 k8s_release_version: v1.27.1
 crictl_version: v1.31.1
 containerd_version: "1.7.14"
-containerd_install_location: /usr/local/bin
-k8s_binary_location: /usr/local/bin
+containerd_install_location: /usr/bin
+k8s_binary_location: /usr/bin
