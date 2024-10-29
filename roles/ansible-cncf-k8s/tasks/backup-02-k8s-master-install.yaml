@@ -1,0 +1,106 @@
+---
+- name: Check if kubeadm-config.yaml exists
+  ansible.builtin.stat:
+    path: /etc/kubernetes/kubeadm-config.yaml
+  register: kubeadm_config
+
+- name: Check if admin.conf exists
+  ansible.builtin.stat:
+    path: /etc/kubernetes/admin.conf
+  register: admin_conf_file
+
+- name: Execute kubeadm command
+  ansible.builtin.command: "{{ k8s_binary_location }}/kubeadm init --config=/etc/kubernetes/kubeadm-config.yaml --upload-certs"
+  become: true
+  args:
+    creates: /etc/kubernetes/admin.conf
+  register: kubeadm_results
+  when:
+    - kubeadm_config.stat.exists
+    - not admin_conf_file.stat.exists
+
+# - name: Write kubeadm output to file
+#   ansible.builtin.copy:
+#     dest: /etc/kubernetes/kubeadm-output.txt
+#     content: "{{ kubeadm_results.stdout }}"
+#     owner: root
+#     group: root
+#     mode: '0644'
+#   become: true
+
+# - name: Read the last 2 lines of kubeadm output from master[0]
+#   ansible.builtin.shell:
+#     cmd: tail -n 2 /etc/kubernetes/kubeadm-output.txt
+#   register: kubeadm_output
+#   delegate_to: "{{ groups['kube_masters'][0] }}"
+
+# - name: Check if kubeadm-join.sh already exists
+#   delegate_to: localhost
+#   become: false
+#   ansible.builtin.stat:
+#     path: "{{kubernetes_join_script}}"
+#   register: kubeadm_join_script
+
+# - name: Create kubeadm-join.sh
+#   delegate_to: localhost
+#   become: false
+#   ansible.builtin.copy:
+#     content: "{{ kubeadm_output }}"
+#     dest: "{{ kubernetes_join_script }}"
+#     owner: alexanderkalaj
+#     group: staff
+#     mode: '0755'
+#   when:
+#     - not kubeadm_join_script.stat.exists
+
+- name: Setup Kube directory
+  ansible.builtin.file:
+    path: "/home/{{kubernetes_user}}/.kube"
+    state: directory
+    owner: "{{kubernetes_user}}"
+    group: "{{kubernetes_user}}"
+    mode: '0755'
+
+- name: Copy admin.conf to .kube directory
+  ansible.builtin.copy:
+    src: /etc/kubernetes/admin.conf
+    dest: "/home/{{kubernetes_user}}/.kube/config"
+    owner: "{{kubernetes_user}}"
+    group: "{{kubernetes_user}}"
+    mode: '0644'
+    remote_src: true
+  become: true
+
+- name: Check if kube config exists
+  ansible.builtin.stat:
+    path: "/home/{{kubernetes_user}}/.kube/config"
+  register: kube_config_file
+
+# - name: Check if kubelet.conf exists
+#   ansible.builtin.stat:
+#     path: /etc/kubernetes/kubelet.conf
+#   register: kubelet_conf_file
+
+# - name: Fetch kube config from master[0]
+#   ansible.builtin.fetch:
+#     src: "/home/{{ kubernetes_user }}/.kube/config"
+#     dest: "{{ kubernetes_kube_config_location }}"
+#     flat: yes
+#   run_once: true
+#   delegate_to: "{{ hostvars[groups['kube_masters'][0]].ansible_host }}"
+#   vars:
+#     ansible_ssh_user: "{{ hostvars[groups['kube_masters'][0]].ansible_user }}"
+#     ansible_ssh_private_key_file: "{{ hostvars[groups['kube_masters'][0]].ansible_ssh_private_key_file }}"
+#   when: kube_config_file.stat.exists
+
+# - name: Fetch kubelet.conf from master
+#   ansible.builtin.fetch:
+#     src: /etc/kubernetes/kubelet.conf
+#     dest: "{{ kubernetes_kubelet_conf_location }}"
+#     flat: yes
+#   run_once: true
+#   delegate_to: "{{ hostvars[groups['kube_masters'][0]].ansible_host }}"
+#   vars:
+#     ansible_ssh_user: "{{ hostvars[groups['kube_masters'][0]].ansible_user }}"
+#     ansible_ssh_private_key_file: "{{ hostvars[groups['kube_masters'][0]].ansible_ssh_private_key_file }}"
+#   when: kubelet_conf_file.stat.exists

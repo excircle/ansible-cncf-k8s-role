@@ -2,6 +2,11 @@
 - name: Gather facts about the host
   ansible.builtin.setup:
 
+- name: Check if /etc/sysctl.d/kubernetes.conf exists
+  ansible.builtin.stat:
+    path: /etc/sysctl.d/kubernetes.conf
+  register: kubernetes_ctl_conf
+
 - name: Templating out Kubernetes sysctl file
   ansible.builtin.template:
     src: kubernetes.conf.j2
@@ -9,55 +14,58 @@
     owner: root
     group: root
     mode: '0644'
+  when: not kubernetes_ctl_conf.stat.exists
 
 - name: Apply sysctl settings
   ansible.builtin.command: sysctl --system
   become: true
+  when: not kubernetes_ctl_conf.stat.exists
 
-- name: Download containerd tarball
-  ansible.builtin.get_url:
-    url: "https://github.com/containerd/containerd/releases/download/v{{ containerd_version }}/containerd-{{ containerd_version }}-linux-amd64.tar.gz"
-    dest: "/tmp/containerd-{{ containerd_version }}-linux-amd64.tar.gz"
+- name: Append IP and hostname to /etc/hosts
+  ansible.builtin.lineinfile:
+    path: /etc/hosts
+    line: "{{ ansible_default_ipv4.address }} k8scp"
+    state: present
+  when: ansible_default_ipv4.address is defined
 
-- name: Extract containerd tarball
-  ansible.builtin.unarchive:
-    src: "/tmp/containerd-{{ containerd_version }}-linux-amd64.tar.gz"
-    dest: /tmp/
-    remote_src: yes
-
-- name: Move binaries from /tmp/bin to /usr/local/bin
-  ansible.builtin.find:
-    paths: /tmp/bin
-    file_type: file
-  register: binaries_to_move
-
-- name: Move each binary to /usr/local/bin
-  ansible.builtin.command:
-    cmd: "mv {{ item.path }} {{ containerd_install_location }}/"
-  loop: "{{ binaries_to_move.files }}"
-  become: true
-  when: binaries_to_move.matched > 0
-
-- name: Remove containerd tarball
+- name: Create keyrings directory if not exists
   ansible.builtin.file:
-    path: "/tmp/containerd-{{ containerd_version }}-linux-amd64.tar.gz"
-    state: absent
-
-- name: Add containerd service file
-  ansible.builtin.template:
-    src: containerd-service-file.j2
-    dest: /etc/systemd/system/containerd.service
-    owner: root
-    group: root
-    mode: '0644'
-
-- name: Create containerd directory if it does not exist
-  ansible.builtin.file:
-    path: /etc/containerd
+    path: /etc/apt/keyrings
     state: directory
     mode: '0755'
     owner: root
     group: root
+  register: keyrings_dir
+
+- name: Check if Docker GPG key exists
+  ansible.builtin.stat:
+    path: /etc/apt/keyrings/docker.gpg
+  register: docker_gpg_key
+
+- name: Retrieve Docker GPG key
+  ansible.builtin.get_url:
+    url: "{{ docker_gpg_url }}"
+    dest: /tmp/docker.key
+    mode: '0644'
+  when: not docker_gpg_key.stat.exists
+
+- name: Convert Docker GPG key to keyring format
+  ansible.builtin.command:
+    cmd: "gpg --dearmor -o /etc/apt/keyrings/docker.gpg /tmp/docker.key"
+    creates: /etc/apt/keyrings/docker.gpg
+
+- name: Add Docker repository
+  ansible.builtin.apt_repository:
+    repo: "{{ docker_repo }}"
+    filename: "docker"
+    state: present
+    update_cache: yes
+
+- name: Update apt cache and install containerd
+  ansible.builtin.apt:
+    name: "{{ ubuntu_containerd_package }}"
+    update_cache: true
+    state: present
 
 - name: Template out containerd config file
   ansible.builtin.template:
@@ -67,85 +75,71 @@
     group: root
     mode: '0644'
 
-- name: Start containerd service
+- name: Restart containerd service
   ansible.builtin.systemd:
     name: containerd
-    state: started
-    enabled: yes
+    state: restarted
+    enabled: true
 
-- name: Append IP and hostname to /etc/hosts
-  ansible.builtin.lineinfile:
-    path: /etc/hosts
-    line: "{{ hostvars[groups['kube_masters'][0]].ansible_default_ipv4.address }} k8scp"
+- name: Check if /etc/apt/keyrings/kubernetes-apt-keyring.gpg exists
+  ansible.builtin.stat:
+    path: /etc/apt/keyrings/kubernetes-apt-keyring.gpg
+  register: kubernetes_gpg_key
+
+- name: Retrieve Kubernetes GPG key
+  ansible.builtin.get_url:
+    url: "{{ kubernetes_gpg_url }}"
+    dest: /tmp/kubernetes-apt-keyring.key
+    mode: '0644'
+  when:
+    - kubernetes_gpg_url is defined
+    - not kubernetes_gpg_key.stat.exists
+
+- name: Convert Kubernetes GPG key to keyring format
+  ansible.builtin.command:
+    cmd: "gpg --dearmor -o /etc/apt/keyrings/kubernetes-apt-keyring.gpg /tmp/kubernetes-apt-keyring.key"
+    creates: /etc/apt/keyrings/kubernetes-apt-keyring.gpg
+  when: not kubernetes_gpg_key.stat.exists
+
+- name: Add Kubernetes repository
+  ansible.builtin.apt_repository:
+    repo: "{{ kubernetes_repo }}"
+    filename: "kubernetes"
     state: present
+    update_cache: yes
+  when: kubernetes_repo is defined
 
-- name: Download kubectl binary
-  ansible.builtin.get_url:
-    url: "https://dl.k8s.io/release/{{ k8s_release_version }}/bin/linux/amd64/kubectl"
-    dest: "/tmp/kubectl"
-    mode: '0755'
+- name: Update apt cache and install Kubernetes components
+  ansible.builtin.apt:
+    name:
+      - kubeadm={{ kubernetes_version }}
+      - kubelet={{ kubernetes_version }}
+      - kubectl={{ kubernetes_version }}
+    update_cache: true
+    state: present
+  when: 
+    - kubernetes_version is defined
 
-- name: Download kubelet binary
-  ansible.builtin.get_url:
-    url: "https://dl.k8s.io/release/{{ k8s_release_version }}/bin/linux/amd64/kubelet"
-    dest: "/tmp/kubelet"
-    mode: '0755'
-
-- name: Download kubeadm binary
-  ansible.builtin.get_url:
-    url: "https://dl.k8s.io/release/{{ k8s_release_version }}/bin/linux/amd64/kubeadm"
-    dest: "/tmp/kubeadm"
-    mode: '0755'
-
-- name: Set executable permissions for kubectl
+- name: Create a directory if it does not exist
   ansible.builtin.file:
-    path: "/tmp/kubectl"
-    mode: '0775'
-    owner: "{{ kubernetes_user }}"
-    state: file
-
-- name: Set executable permissions for kubelet
-  ansible.builtin.file:
-    path: "/tmp/kubelet"
-    mode: '0775'
-    owner: "{{ kubernetes_user }}"
-    state: file
-
-- name: Set executable permissions for kubeadm
-  ansible.builtin.file:
-    path: "/tmp/kubeadm"
-    mode: '0775'
-    owner: "{{ kubernetes_user }}"
-    state: file
-
-- name: Move kubectl to k8s binary location
-  ansible.builtin.command:
-    cmd: mv /tmp/kubectl {{ k8s_binary_location }}
-
-- name: Move kubelet to k8s binary location
-  ansible.builtin.command:
-    cmd: mv /tmp/kubelet {{ k8s_binary_location }}
-
-- name: Move kubeadm to k8s binary location
-  ansible.builtin.command:
-    cmd: mv /tmp/kubeadm {{ k8s_binary_location }}
-
-- name: Add kubelet-service-file template file
-  ansible.builtin.template:
-    src: kubelet-service-file.j2
-    dest: /etc/systemd/system/kubelet.service
+    path: /etc/kubernetes
+    state: directory
+    mode: '0755'
     owner: root
     group: root
-    mode: '0644'
 
-- name: Reload systemd to recognize new kubelet service file
-  ansible.builtin.systemd:
-    daemon_reload: yes
+- name: Templating out kubeadm config file
+  ansible.builtin.template:
+    src: kubeadm-config.yaml.j2
+    dest: /etc/kubernetes/kubeadm-config.yaml
+    owner: root
+    group: root
+    mode: '0775'
 
-- name: Enable kubelet service
-  ansible.builtin.systemd:
-    name: kubelet
-    enabled: yes
+- name: Check if kubeadm config file exists
+  ansible.builtin.stat:
+    path: /etc/kubernetes/kubeadm-config.yaml
+  register: kubeadm_config
 
 - name: Add kubectl configurations to .bashrc
   ansible.builtin.lineinfile:

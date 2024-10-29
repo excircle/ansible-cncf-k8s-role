@@ -27,25 +27,8 @@
   when:
     - ansible_os_family == 'Debian'
 
-- name: Download crictl tarball
-  ansible.builtin.get_url:
-    url: "https://github.com/kubernetes-sigs/cri-tools/releases/download/{{ crictl_version }}/crictl-{{ crictl_version }}-linux-amd64.tar.gz"
-    dest: "/tmp/crictl-{{ crictl_version }}-linux-amd64.tar.gz"
-
-- name: Extract crictl to /usr/local/bin
-  ansible.builtin.unarchive:
-    src: "/tmp/crictl-{{ crictl_version }}-linux-amd64.tar.gz"
-    dest: "/usr/local/bin"
-    remote_src: yes
-
-- name: Remove crictl tarball
-  ansible.builtin.file:
-    path: "/tmp/crictl-{{ crictl_version }}-linux-amd64.tar.gz"
-    state: absent
-
 - name: Turn swap off
   ansible.builtin.command: swapoff -a
-  when: ansible_swaptotal_mb > 0
 
 - name: Load kernel modules
   ansible.builtin.modprobe:
