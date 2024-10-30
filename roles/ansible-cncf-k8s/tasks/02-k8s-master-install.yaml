@@ -1,37 +1,53 @@
 ---
-# - name: Initialize Kubernetes cluster
-#   ansible.builtin.command:
-#     cmd: kubeadm init --config=/etc/kubernetes/kubeadm-config.yaml --upload-certs --ignore-preflight-errors=all --v=5
-#   become: true
-#   register: kubeadm_init_output
+- name: Initialize Kubernetes cluster
+  ansible.builtin.command:
+    cmd: kubeadm init --config=/etc/kubernetes/kubeadm-config.yaml --upload-certs --ignore-preflight-errors=all --v=5
+  become: true
+  register: kubeadm_init_output
 
-# - name: Save kubeadm init output to file
-#   ansible.builtin.copy:
-#     content: "{{ kubeadm_init_output.stdout }}"
-#     dest: /etc/kubernetes/kubeadm-init.out
+- name: Save kubeadm init output to file
+  ansible.builtin.copy:
+    content: "{{ kubeadm_init_output.stdout }}"
+    dest: /etc/kubernetes/kubeadm-init.out
 
-# - name: Ensure .kube directory exists for user
-#   ansible.builtin.file:
-#     path: "/home/{{ kubernetes_user }}/.kube"
-#     state: directory
-#     owner: "{{ kubernetes_user }}"
-#     group: "{{ kubernetes_user }}"
-#     mode: '0755'
+- name: Ensure .kube/config file exists
+  ansible.builtin.stat:
+    path: "/home/{{ kubernetes_user }}/.kube/config"
+  register: kube_config
 
-# - name: Ensure .kube/config file exists
-#   ansible.builtin.stat:
-#     path: "/home/{{ kubernetes_user }}/.kube/config"
-#   register: kube_config
+- name: Copy Kubernetes admin configuration
+  ansible.builtin.copy:
+    remote_src: true
+    src: /etc/kubernetes/admin.conf
+    dest: "/home/{{ kubernetes_user }}/.kube/config"
+    owner: "{{ kubernetes_user }}"
+    group: "{{ kubernetes_user }}"
+    mode: '0755'
+  when: not kube_config.stat.exists
 
-# - name: Copy Kubernetes admin configuration
-#   ansible.builtin.copy:
-#     remote_src: true
-#     src: /etc/kubernetes/admin.conf
-#     dest: "/home/{{ kubernetes_user }}/.kube/config"
-#     owner: "{{ kubernetes_user }}"
-#     group: "{{ kubernetes_user }}"
-#     mode: '0755'
-#   when: not kube_config.stat.exists
+- name: Check if kubeadm-join.sh already exists
+  delegate_to: localhost
+  become: false
+  ansible.builtin.stat:
+    path: "{{ kubernetes_join_script }}"
+  register: kubeadm_join_script
+
+- name: Retrieve last 2 lines of kubeadm-init.out and save to local as kubernetes_join_script
+  ansible.builtin.shell: "tail -n 2 /etc/kubernetes/kubeadm-init.out"
+  register: kubeadm_output
+  become: true  # This remains, as it's needed for the remote file access
+
+- name: Save last 2 lines of kubeadm-init.out to kubernetes_join_script locally
+  ansible.builtin.copy:
+    content: "{{ kubeadm_output.stdout }}"
+    dest: "{{ kubernetes_join_script }}"
+  delegate_to: localhost
+  become: false  # Disable sudo on the local task
+  when:
+    - not kubeadm_join_script.stat.exists
+  vars:
+    ansible_ssh_user: "{{ hostvars[groups['kube_masters'][0]].ansible_user }}"
+    ansible_ssh_private_key_file: "{{ hostvars[groups['kube_masters'][0]].ansible_ssh_private_key_file }}"
 
 - name: Check if Tigera operator is already installed
   ansible.builtin.command:

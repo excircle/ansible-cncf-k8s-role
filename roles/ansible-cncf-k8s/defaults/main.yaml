@@ -17,6 +17,8 @@ kubernetes_repo: >
 kubernetes_user: ubuntu
 
 k8s_binary_location: /usr/bin
+local_kube_config: /Users/alexanderkalaj/Documents/github/ansible-cncf-k8s-role/roles/ansible-cncf-k8s/config
+kubernetes_join_script: /Users/alexanderkalaj/Documents/github/ansible-cncf-k8s-role/roles/ansible-cncf-k8s/kubeadm-join.sh
 
 calico_version: v3.28.2
 calico_operator_manifest: "https://raw.githubusercontent.com/projectcalico/calico/v3.28.2/manifests/tigera-operator.yaml"

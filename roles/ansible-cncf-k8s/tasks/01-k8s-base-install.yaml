@@ -24,9 +24,8 @@
 - name: Append IP and hostname to /etc/hosts
   ansible.builtin.lineinfile:
     path: /etc/hosts
-    line: "{{ ansible_default_ipv4.address }} k8scp"
+    line: "{{ hostvars[groups['kube_masters'][0]].ansible_default_ipv4.address }} k8scp"
     state: present
-  when: ansible_default_ipv4.address is defined
 
 - name: Create keyrings directory if not exists
   ansible.builtin.file:
@@ -153,3 +152,11 @@
     - "complete -o default -F __start_kubectl k"
   become: true
   become_user: "{{kubernetes_user}}"
+
+- name: Ensure .kube directory exists for user
+  ansible.builtin.file:
+    path: "/home/{{ kubernetes_user }}/.kube"
+    state: directory
+    owner: "{{ kubernetes_user }}"
+    group: "{{ kubernetes_user }}"
+    mode: '0755'
