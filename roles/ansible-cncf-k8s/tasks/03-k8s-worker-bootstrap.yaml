@@ -26,7 +26,6 @@
     mode: '0755'
 
 - name: Copy join script to remote
-  run_once: true
   ansible.builtin.copy:
     src: "{{ kubernetes_join_script }}"
     dest: "/home/{{ kubernetes_user }}/kubeadm-join.sh"

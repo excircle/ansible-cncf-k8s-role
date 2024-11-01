@@ -1,5 +1,7 @@
 .vscode
 roles/ansible-cncf-k8s/kube-config
 roles/ansible-cncf-k8s/kubeadm-join.sh
+roles/ansible-cncf-k8s/config
 nodes.json
 tag.sh
+invetories

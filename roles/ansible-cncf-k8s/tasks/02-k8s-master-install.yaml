@@ -35,19 +35,30 @@
 - name: Retrieve last 2 lines of kubeadm-init.out and save to local as kubernetes_join_script
   ansible.builtin.shell: "tail -n 2 /etc/kubernetes/kubeadm-init.out"
   register: kubeadm_output
-  become: true  # This remains, as it's needed for the remote file access
+  become: true  
 
-- name: Save last 2 lines of kubeadm-init.out to kubernetes_join_script locally
+- name: Create kubeadm-join.sh script
   ansible.builtin.copy:
     content: "{{ kubeadm_output.stdout }}"
     dest: "{{ kubernetes_join_script }}"
   delegate_to: localhost
-  become: false  # Disable sudo on the local task
+  become: false  
   when:
     - not kubeadm_join_script.stat.exists
   vars:
     ansible_ssh_user: "{{ hostvars[groups['kube_masters'][0]].ansible_user }}"
     ansible_ssh_private_key_file: "{{ hostvars[groups['kube_masters'][0]].ansible_ssh_private_key_file }}"
+
+- name: Append to the end of line 2 in kubeadm-join.sh
+  ansible.builtin.lineinfile:
+    path: "{{ kubernetes_join_script }}"
+    line: "{{ lookup('file', kubernetes_join_script).splitlines()[1] }} --v=5 --ignore-preflight-errors=all"
+    regexp: '^.*$'
+    insertafter: '^.*$'
+    backrefs: yes
+  run_once: true
+  delegate_to: localhost
+  become: false
 
 - name: Check if Tigera operator is already installed
   ansible.builtin.command:
