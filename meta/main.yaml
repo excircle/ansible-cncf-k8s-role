@@ -1,0 +1,18 @@
+galaxy_info:
+  role_name: ansible-cncf-k8s-role
+  author: alexanderkalaj
+  description: CNCF Kubernetes for Linux.
+  license: BSD
+  min_ansible_version: 2.11
+  platforms:
+    - name: Ubuntu
+      versions:
+        - 22.04
+        - 24.04
+    - name: CentOS
+      versions:
+        - 8
+  galaxy_tags:
+    - kubernetes
+
+dependencies: []
