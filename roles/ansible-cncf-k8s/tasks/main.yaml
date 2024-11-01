@@ -4,13 +4,3 @@
 
 - name: Kubernetes Base Install
   ansible.builtin.include_tasks: "01-k8s-base-install.yaml"
-
-- name: Kubernetes Control Plane Bootstrap
-  ansible.builtin.include_tasks: "02-k8s-master-install.yaml"
-  when:
-    - "'kube_masters' in group_names"
-    - inventory_hostname == groups['kube_masters'][0]
-
-- name: Kubernetes Worker Node Bootstrap
-  ansible.builtin.include_tasks: "03-k8s-worker-bootstrap.yaml"
-  when: "'kube_workers' in group_names"
