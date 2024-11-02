@@ -1,7 +1,7 @@
 ---
 # Defaults
 docker_gpg_url: https://download.docker.com/linux/ubuntu/gpg
-
+perform_base_install: true
 docker_repo: >
   deb [arch={{ 'amd64' if ansible_architecture == 'x86_64' else ansible_architecture }} signed-by=/etc/apt/keyrings/docker.gpg]
   https://download.docker.com/linux/ubuntu {{ ansible_lsb.codename }} stable
@@ -17,8 +17,8 @@ kubernetes_repo: >
 kubernetes_user: ubuntu
 
 k8s_binary_location: /usr/bin
-local_kube_config: /Users/alexanderkalaj/Documents/github/ansible-cncf-k8s-role/roles/ansible-cncf-k8s/config
-kubernetes_join_script: /Users/alexanderkalaj/Documents/github/ansible-cncf-k8s-role/roles/ansible-cncf-k8s/kubeadm-join.sh
+local_kube_config: /Users/akalaj/Documents/scratch/k8s-bootstrap/ansible-cncf-k8s-role/config
+kubernetes_join_script: /Users/akalaj/Documents/scratch/k8s-bootstrap/ansible-cncf-k8s-role/kubeadm-join.sh
 
 calico_version: v3.28.2
 calico_operator_manifest: "https://raw.githubusercontent.com/projectcalico/calico/v3.28.2/manifests/tigera-operator.yaml"

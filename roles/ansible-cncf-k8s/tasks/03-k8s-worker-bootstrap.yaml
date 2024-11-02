@@ -1,4 +1,10 @@
 ---
+- name: Append IP and hostname to /etc/hosts
+  ansible.builtin.lineinfile:
+    path: /etc/hosts
+    line: "{{ hostvars[groups['kube_masters'][0]].ansible_default_ipv4.address }} k8scp"
+    state: present
+
 - name: Check if kube-config exists locally
   delegate_to: localhost
   become: false
