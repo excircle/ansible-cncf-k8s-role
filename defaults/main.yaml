@@ -1,5 +1,6 @@
 ---
 # Defaults
+perform_base_install: true
 docker_gpg_url: https://download.docker.com/linux/ubuntu/gpg
 
 docker_repo: >
