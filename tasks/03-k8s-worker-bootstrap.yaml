@@ -1,0 +1,50 @@
+---
+- name: Append IP and hostname to /etc/hosts
+  ansible.builtin.lineinfile:
+    path: /etc/hosts
+    line: "{{ hostvars[groups['kube_masters'][0]].ansible_default_ipv4.address }} k8scp"
+    state: present
+
+- name: Check if kube-config exists locally
+  delegate_to: localhost
+  become: false
+  ansible.builtin.stat:
+    path: "{{ local_kube_config }}"
+  register: kube_config_script
+
+- name: Fetch kube config from master[0]
+  ansible.builtin.fetch:
+    src: "/home/{{ kubernetes_user }}/.kube/config"
+    dest: "{{ local_kube_config }}"
+    flat: yes
+  delegate_to: "{{ hostvars[groups['kube_masters'][0]].ansible_host }}"
+  vars:
+    ansible_ssh_user: "{{ hostvars[groups['kube_masters'][0]].ansible_user }}"
+    ansible_ssh_private_key_file: "{{ hostvars[groups['kube_masters'][0]].ansible_ssh_private_key_file }}"
+  when: not kube_config_script.stat.exists
+
+- name: Provision .kube/config from kube-config file
+  ansible.builtin.copy:
+    src: "{{ local_kube_config }}"
+    dest: "/home/{{ kubernetes_user }}/.kube/config"
+    owner: "{{ kubernetes_user }}"
+    group: "{{ kubernetes_user }}"
+    mode: '0755'
+
+- name: Copy join script to remote
+  ansible.builtin.copy:
+    src: "{{ kubernetes_join_script }}"
+    dest: "/home/{{ kubernetes_user }}/kubeadm-join.sh"
+    owner: "{{ kubernetes_user }}"
+    group: "{{ kubernetes_user }}"
+    mode: '0755'
+
+- name: Check if join.sh script exists
+  ansible.builtin.stat:
+    path: "/home/{{ kubernetes_user }}/kubeadm-join.sh"
+  register: join_script
+
+- name: Execute kubeadm-join.sh
+  ansible.builtin.shell: "/home/{{ kubernetes_user }}/kubeadm-join.sh"
+  become: true
+  when: join_script.stat.exists

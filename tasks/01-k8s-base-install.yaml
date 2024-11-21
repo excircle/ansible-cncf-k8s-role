@@ -154,3 +154,4 @@
     owner: "{{ kubernetes_user }}"
     group: "{{ kubernetes_user }}"
     mode: '0755'
+
