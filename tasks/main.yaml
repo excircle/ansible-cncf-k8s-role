@@ -18,4 +18,3 @@
   ansible.builtin.include_tasks: "03-k8s-worker-bootstrap.yaml"
   when: 
     - "'kube_workers' in group_names"
-    - perform_base_install == false
