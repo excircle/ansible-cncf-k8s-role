@@ -7,7 +7,7 @@
 
 - name: Initialize Kubernetes cluster
   ansible.builtin.command:
-    cmd: kubeadm init --config=/etc/kubernetes/kubeadm-config.yaml --control-plane-endpoint k8s-node-1 --upload-certs --ignore-preflight-errors=all --v=5
+    cmd: kubeadm init --config=/etc/kubernetes/kubeadm-config.yaml --upload-certs --ignore-preflight-errors=all --v=5
   become: true
   register: kubeadm_init_output
 
