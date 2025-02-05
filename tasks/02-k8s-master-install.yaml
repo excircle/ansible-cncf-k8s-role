@@ -5,6 +5,12 @@
     line: "{{ hostvars[groups['kube_masters'][0]].ansible_default_ipv4.address }} k8scp"
     state: present
 
+- name: Wait for file '/etc/hostname-changed' to be present
+  wait_for:
+    path: /etc/hostname-changed
+    state: present
+    timeout: 300  # Adjust timeout as needed (in seconds)
+    
 - name: Initialize Kubernetes cluster
   ansible.builtin.command:
     cmd: kubeadm init --config=/etc/kubernetes/kubeadm-config.yaml --upload-certs --ignore-preflight-errors=all --v=5
