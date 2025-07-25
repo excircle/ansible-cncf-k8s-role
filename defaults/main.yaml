@@ -24,3 +24,4 @@ kubernetes_join_script: /tmp/kubeadm-join.sh
 calico_version: v3.28.2
 calico_operator_manifest: "https://raw.githubusercontent.com/projectcalico/calico/v3.28.2/manifests/tigera-operator.yaml"
 calico_custom_resources_manifest: "https://raw.githubusercontent.com/projectcalico/calico/v3.28.2/manifests/custom-resources.yaml"
+calico_cidr_range: 10.0.0.0/16

@@ -90,6 +90,11 @@
   when: tigera_operator_check.rc == 1
   become: true
 
+- name: Template out Calico custom-resources.yaml for 10.0.0.0 CIDR
+  ansible.builtin.template:
+    src: custom-resources.yaml.j2
+    dest: /tmp/custom-resources.yaml
+
 - name: Check if Calico custom resources are already installed
   ansible.builtin.command:
     cmd: "{{ k8s_binary_location }}/kubectl --kubeconfig /home/{{ kubernetes_user }}/.kube/config get bgpconfiguration default"
@@ -100,7 +105,7 @@
 
 - name: Apply Calico custom resources manifest if not already installed
   ansible.builtin.command:
-    cmd: "{{ k8s_binary_location }}/kubectl --kubeconfig /home/{{ kubernetes_user }}/.kube/config create -f https://raw.githubusercontent.com/projectcalico/calico/{{ calico_version }}/manifests/custom-resources.yaml"
+    cmd: "{{ k8s_binary_location }}/kubectl --kubeconfig /home/{{ kubernetes_user }}/.kube/config create -f /tmp/custom-resources.yaml"
   register: calico_custom_resources_result
   retries: 3
   delay: 5
