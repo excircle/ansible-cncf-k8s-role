@@ -18,8 +18,9 @@ kubernetes_repo: >
 kubernetes_user: akalaj
 
 k8s_binary_location: /usr/bin
-local_kube_config: /Users/akalaj/Documents/scratch/test-ansible-cncf-k8s-role/config
-kubernetes_join_script: /Users/akalaj/Documents/scratch/test-ansible-cncf-k8s-role/kubeadm-join.sh
+script_location: /tmp/
+local_kube_config: {{ script_location }}/config
+kubernetes_join_script: {{ script_location }}/kubeadm-join.sh
 
 calico_version: v3.28.2
 calico_operator_manifest: "https://raw.githubusercontent.com/projectcalico/calico/v3.28.2/manifests/tigera-operator.yaml"
