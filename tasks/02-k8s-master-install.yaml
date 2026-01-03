@@ -10,6 +10,7 @@
     path: /etc/hostname-changed
     state: present
     timeout: 300  # Adjust timeout as needed (in seconds)
+  when: wait_hostname_file_change
     
 - name: Initialize Kubernetes cluster
   ansible.builtin.command:

@@ -12,7 +12,6 @@
   when:
     - "'kube_masters' in group_names"
     - inventory_hostname == groups['kube_masters'][0]
-    - perform_base_install == false
 
 - name: Kubernetes Worker Node Bootstrap
   ansible.builtin.include_tasks: "03-k8s-worker-bootstrap.yaml"
