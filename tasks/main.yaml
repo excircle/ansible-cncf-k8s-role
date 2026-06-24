@@ -1,4 +1,13 @@
 ---
+- name: Prefer IPv4 over (black-holed) IPv6 in glibc resolver
+  ansible.builtin.lineinfile:
+    path: /etc/gai.conf
+    regexp: '^#?precedence ::ffff:0:0/96'
+    line: "precedence ::ffff:0:0/96  100"
+    create: true
+    mode: '0644'
+  when: prefer_ipv4_resolution | default(false)
+
 - name: Include OS Family Relevant Tasks
   ansible.builtin.include_tasks: "install/{{ ansible_os_family }}.yaml"
   when: perform_base_install == true
@@ -6,6 +15,14 @@
 - name: Kubernetes Base Install
   ansible.builtin.include_tasks: "01-k8s-base-install.yaml"
   when: perform_base_install == true
+
+- name: Provision local data disks for AiStor (all-or-nothing per node)
+  ansible.builtin.include_tasks:
+    file: "data-disks.yaml"
+    apply:
+      tags: [data_disks]
+  when: configure_data_disks | default(false)
+  tags: [data_disks]
 
 - name: Kubernetes Control Plane Bootstrap
   ansible.builtin.include_tasks: "02-k8s-master-install.yaml"

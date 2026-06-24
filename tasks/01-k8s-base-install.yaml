@@ -35,12 +35,35 @@
     path: /etc/apt/keyrings/docker.gpg
   register: docker_gpg_key
 
-- name: Retrieve Docker GPG key
+- name: Retrieve Docker GPG key (per-host direct)
   ansible.builtin.get_url:
     url: "{{ docker_gpg_url }}"
     dest: /tmp/docker.key
     mode: '0644'
-  when: not docker_gpg_key.stat.exists
+  when:
+    - not docker_gpg_key.stat.exists
+    - not (fetch_gpg_keys_on_controller | default(false))
+
+- name: Retrieve Docker GPG key on controller (once)
+  ansible.builtin.get_url:
+    url: "{{ docker_gpg_url }}"
+    dest: /tmp/docker.key
+    mode: '0644'
+  delegate_to: localhost
+  run_once: true
+  become: false
+  when:
+    - not docker_gpg_key.stat.exists
+    - fetch_gpg_keys_on_controller | default(false)
+
+- name: Copy controller-fetched Docker GPG key to host
+  ansible.builtin.copy:
+    src: /tmp/docker.key
+    dest: /tmp/docker.key
+    mode: '0644'
+  when:
+    - not docker_gpg_key.stat.exists
+    - fetch_gpg_keys_on_controller | default(false)
 
 - name: Convert Docker GPG key to keyring format
   ansible.builtin.command:
@@ -79,7 +102,7 @@
     path: /etc/apt/keyrings/kubernetes-apt-keyring.gpg
   register: kubernetes_gpg_key
 
-- name: Retrieve Kubernetes GPG key
+- name: Retrieve Kubernetes GPG key (per-host direct)
   ansible.builtin.get_url:
     url: "{{ kubernetes_gpg_url }}"
     dest: /tmp/kubernetes-apt-keyring.key
@@ -87,6 +110,29 @@
   when:
     - kubernetes_gpg_url is defined
     - not kubernetes_gpg_key.stat.exists
+    - not (fetch_gpg_keys_on_controller | default(false))
+
+- name: Retrieve Kubernetes GPG key on controller (once)
+  ansible.builtin.get_url:
+    url: "{{ kubernetes_gpg_url }}"
+    dest: /tmp/kubernetes-apt-keyring.key
+    mode: '0644'
+  delegate_to: localhost
+  run_once: true
+  become: false
+  when:
+    - kubernetes_gpg_url is defined
+    - not kubernetes_gpg_key.stat.exists
+    - fetch_gpg_keys_on_controller | default(false)
+
+- name: Copy controller-fetched Kubernetes GPG key to host
+  ansible.builtin.copy:
+    src: /tmp/kubernetes-apt-keyring.key
+    dest: /tmp/kubernetes-apt-keyring.key
+    mode: '0644'
+  when:
+    - not kubernetes_gpg_key.stat.exists
+    - fetch_gpg_keys_on_controller | default(false)
 
 - name: Convert Kubernetes GPG key to keyring format
   ansible.builtin.command:

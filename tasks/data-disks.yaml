@@ -1,0 +1,180 @@
+---
+# Provision the node-local data disks that back the AiStor OpenTofu local PVs
+# (/mnt/data{N}) as an ALL-OR-NOTHING set.
+#
+# Rationale: MinIO/AiStor erasure-codes across the entire drive set. A partially
+# provisioned set (some disks carrying data, others blank) is untrustworthy, so we
+# never reuse individual disks piecemeal. Per node we treat the whole set as a unit:
+#   * fully formatted + mounted  -> converged: leave data alone, only ensure fstab
+#   * all blank                  -> format the whole set + mount
+#   * anything in between        -> default: wipe + reformat the whole set
+#                                   data_disk_preserve_existing=true: HALT instead
+# The OS/root disk is never a valid target (guarded explicitly below).
+
+- name: data-disks | Build the target device/mount set
+  ansible.builtin.set_fact:
+    data_disk_targets: "{{ data_disk_targets | default([]) + [_entry] }}"
+  vars:
+    _entry:
+      index: "{{ item }}"
+      device: "/dev/{{ data_disk_device_prefix }}{{ item }}"
+      mount: "{{ data_disk_mount_base }}/{{ data_disk_dir_name }}{{ item }}"
+  loop: "{{ range(1, (data_disk_count | int) + 1) | list }}"
+  loop_control:
+    label: "/dev/{{ data_disk_device_prefix }}{{ item }}"
+
+- name: data-disks | Confirm every target device exists and is a block device
+  ansible.builtin.stat:
+    path: "{{ item.device }}"
+  loop: "{{ data_disk_targets }}"
+  loop_control:
+    label: "{{ item.device }}"
+  register: _dev_stat
+
+- name: data-disks | Fail if a target device is missing (check data_disk_device_prefix / count)
+  ansible.builtin.fail:
+    msg: >-
+      Target device {{ item.item.device }} not found on {{ inventory_hostname }}
+      (exists={{ item.stat.exists }}, isblk={{ item.stat.isblk | default(false) }}).
+      Check data_disk_device_prefix='{{ data_disk_device_prefix }}' and
+      data_disk_count={{ data_disk_count }}.
+  loop: "{{ _dev_stat.results }}"
+  loop_control:
+    label: "{{ item.item.device }}"
+  when: not (item.stat.exists and (item.stat.isblk | default(false)))
+
+- name: data-disks | Identify the device backing the root filesystem
+  ansible.builtin.set_fact:
+    _root_source: "{{ (ansible_mounts | selectattr('mount', 'equalto', '/') | map(attribute='device') | first) | default('') }}"
+
+- name: data-disks | SAFETY — refuse to ever target the OS/root disk
+  ansible.builtin.fail:
+    msg: >-
+      Refusing to provision: target device {{ item.device }} appears to back the
+      root filesystem ({{ _root_source }}) on {{ inventory_hostname }}.
+  loop: "{{ data_disk_targets }}"
+  loop_control:
+    label: "{{ item.device }}"
+  when:
+    - _root_source | length > 0
+    - (_root_source == item.device) or (_root_source.startswith(item.device))
+
+- name: data-disks | Probe each target for an existing filesystem type
+  ansible.builtin.command: "blkid -p -s TYPE -o value {{ item.device }}"
+  loop: "{{ data_disk_targets }}"
+  loop_control:
+    label: "{{ item.device }}"
+  register: _fs_probe
+  changed_when: false
+  failed_when: false          # blkid returns rc=2 (empty stdout) when there is no filesystem
+
+- name: data-disks | Probe what (if anything) is mounted at each target path
+  ansible.builtin.command: "findmnt -no SOURCE {{ item.mount }}"
+  loop: "{{ data_disk_targets }}"
+  loop_control:
+    label: "{{ item.mount }}"
+  register: _mnt_probe
+  changed_when: false
+  failed_when: false          # findmnt returns rc=1 when nothing is mounted there
+
+- name: data-disks | Tally targets already mounted from their own device
+  ansible.builtin.set_fact:
+    _mounted_ok_devices: >-
+      {{ _mounted_ok_devices | default([])
+         + ([item.0.device] if (item.1.stdout | trim) == item.0.device else []) }}
+  loop: "{{ data_disk_targets | zip(_mnt_probe.results) | list }}"
+  loop_control:
+    label: "{{ item.0.device }}"
+
+- name: data-disks | Classify the disk set
+  ansible.builtin.set_fact:
+    _n_total: "{{ data_disk_targets | length }}"
+    _n_with_fs: "{{ _fs_probe.results | map(attribute='stdout') | map('trim') | reject('equalto', '') | list | length }}"
+    _n_correct_fs: "{{ _fs_probe.results | map(attribute='stdout') | map('trim') | select('equalto', data_disk_fstype) | list | length }}"
+    _n_mounted_ok: "{{ _mounted_ok_devices | default([]) | length }}"
+
+- name: data-disks | Derive set state (converged / has-data)
+  ansible.builtin.set_fact:
+    _converged: "{{ (_n_correct_fs | int) == (_n_total | int) and (_n_mounted_ok | int) == (_n_total | int) }}"
+    _any_data: "{{ (_n_with_fs | int) > 0 }}"
+
+- name: data-disks | Set state on {{ inventory_hostname }}
+  ansible.builtin.debug:
+    msg: >-
+      {{ _n_total }} target disks | with_fs={{ _n_with_fs }}
+      correct_fs={{ _n_correct_fs }} mounted_ok={{ _n_mounted_ok }}
+      -> converged={{ _converged }} any_data={{ _any_data }}
+      (preserve_existing={{ data_disk_preserve_existing }})
+
+- name: data-disks | HALT — existing data present and preserve mode is enabled
+  ansible.builtin.fail:
+    msg: >-
+      data_disk_preserve_existing=true and {{ _n_with_fs }}/{{ _n_total }} target
+      disks on {{ inventory_hostname }} already contain a filesystem, and the set is
+      not fully converged. Refusing to touch them. Set data_disk_preserve_existing=false
+      to wipe and reformat the entire set, or investigate the disks manually.
+  when:
+    - not (_converged | bool)
+    - data_disk_preserve_existing | bool
+    - _any_data | bool
+
+- name: data-disks | Provision the data-disk set (all-or-nothing wipe + reformat)
+  when: not (_converged | bool)
+  block:
+    - name: data-disks | Unmount any target devices before reformatting
+      ansible.posix.mount:
+        path: "{{ item.mount }}"
+        state: unmounted
+      loop: "{{ data_disk_targets }}"
+      loop_control:
+        label: "{{ item.mount }}"
+
+    - name: data-disks | Format the entire set as {{ data_disk_fstype }}
+      community.general.filesystem:
+        fstype: "{{ data_disk_fstype }}"
+        dev: "{{ item.device }}"
+        force: true
+      loop: "{{ data_disk_targets }}"
+      loop_control:
+        label: "{{ item.device }}"
+
+    - name: data-disks | Read back each device UUID
+      ansible.builtin.command: "blkid -p -s UUID -o value {{ item.device }}"
+      loop: "{{ data_disk_targets }}"
+      loop_control:
+        label: "{{ item.device }}"
+      register: _new_uuids
+      changed_when: false
+
+    - name: data-disks | Mount the set and persist in /etc/fstab (by UUID)
+      ansible.posix.mount:
+        path: "{{ item.0.mount }}"
+        src: "UUID={{ item.1.stdout | trim }}"
+        fstype: "{{ data_disk_fstype }}"
+        opts: "{{ data_disk_mount_opts }}"
+        state: mounted
+      loop: "{{ data_disk_targets | zip(_new_uuids.results) | list }}"
+      loop_control:
+        label: "{{ item.0.mount }}"
+
+- name: data-disks | Ensure fstab persistence for an already-converged set
+  when: _converged | bool
+  block:
+    - name: data-disks | Read back each device UUID (converged set)
+      ansible.builtin.command: "blkid -p -s UUID -o value {{ item.device }}"
+      loop: "{{ data_disk_targets }}"
+      loop_control:
+        label: "{{ item.device }}"
+      register: _conv_uuids
+      changed_when: false
+
+    - name: data-disks | Ensure mount + fstab entry without reformatting (idempotent)
+      ansible.posix.mount:
+        path: "{{ item.0.mount }}"
+        src: "UUID={{ item.1.stdout | trim }}"
+        fstype: "{{ data_disk_fstype }}"
+        opts: "{{ data_disk_mount_opts }}"
+        state: mounted
+      loop: "{{ data_disk_targets | zip(_conv_uuids.results) | list }}"
+      loop_control:
+        label: "{{ item.0.mount }}"

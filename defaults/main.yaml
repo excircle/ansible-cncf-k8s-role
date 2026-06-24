@@ -1,6 +1,15 @@
 ---
 # Defaults
 perform_base_install: true
+
+# --- Network / GPG-fetch workarounds for hosts with black-holed IPv6 ---
+# Option 1 (prefer_ipv4_resolution): set glibc IPv4 precedence in /etc/gai.conf so
+#   get_url/apt don't stall ~80s on a dead IPv6 address before falling back to IPv4.
+# Option 2 (fetch_gpg_keys_on_controller): fetch GPG keys once on the Ansible
+#   controller and copy them to hosts, sidestepping host IPv6 for the key downloads.
+prefer_ipv4_resolution: true
+fetch_gpg_keys_on_controller: false
+
 docker_gpg_url: https://download.docker.com/linux/ubuntu/gpg
 
 docker_repo: >
@@ -19,11 +28,29 @@ kubernetes_user: akalaj
 
 k8s_binary_location: /usr/bin
 script_location: /tmp/
-local_kube_config: {{ script_location }}/config
-kubernetes_join_script: {{ script_location }}/kubeadm-join.sh
+local_kube_config: "{{ script_location }}/config"
+kubernetes_join_script: "{{ script_location }}/kubeadm-join.sh"
+
+# --- Local data-disk provisioning for AiStor (all-or-nothing per node) ---
+# Formats + mounts the node-local block devices that back the OpenTofu local PVs
+# (/mnt/data{N}). MinIO erasure-codes across the whole drive set, so the set is
+# provisioned atomically: a fully formatted+mounted set is left alone, an
+# inconsistent set is wiped and reformatted as a unit, and (when
+# data_disk_preserve_existing is true) any pre-existing data halts the play.
+# NOTE: data_disk_count MUST match the OpenTofu module disk_count (test-aistor-pv-config).
+configure_data_disks: true
+data_disk_mount_base: /mnt
+data_disk_dir_name: data            # -> /mnt/data{N}
+data_disk_device_prefix: nvme0n     # -> /dev/nvme0n{N}
+data_disk_count: 8
+data_disk_fstype: xfs               # xfsprogs is installed via install/Debian.yaml
+data_disk_mount_opts: "defaults,noatime"
+data_disk_preserve_existing: false  # false = wipe+format a non-converged set; true = HALT if data found
+
+crictl_version: v1.34.0
 
 calico_version: v3.28.2
 calico_operator_manifest: "https://raw.githubusercontent.com/projectcalico/calico/v3.28.2/manifests/tigera-operator.yaml"
 calico_custom_resources_manifest: "https://raw.githubusercontent.com/projectcalico/calico/v3.28.2/manifests/custom-resources.yaml"
 
-wait_hostname_file_change: true
+wait_hostname_file_change: false

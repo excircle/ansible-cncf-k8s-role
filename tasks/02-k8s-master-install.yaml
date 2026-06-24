@@ -38,38 +38,17 @@
     mode: '0755'
   when: not kube_config.stat.exists
 
-- name: Check if kubeadm-join.sh already exists
-  delegate_to: localhost
-  become: false
-  ansible.builtin.stat:
-    path: "{{ kubernetes_join_script }}"
-  register: kubeadm_join_script
+- name: Generate a fresh kubeadm join command on the control plane
+  ansible.builtin.command:
+    cmd: kubeadm token create --print-join-command
+  register: kubeadm_join_command
+  changed_when: true
+  become: true
 
-- name: Retrieve last 2 lines of kubeadm-init.out and save to local as kubernetes_join_script
-  ansible.builtin.shell: "tail -n 2 /etc/kubernetes/kubeadm-init.out"
-  register: kubeadm_output
-  become: true  
-
-- name: Create kubeadm-join.sh script
+- name: Write a fresh join script on the controller (always overwrite to avoid stale-token reuse)
   ansible.builtin.copy:
-    content: "{{ kubeadm_output.stdout }}"
+    content: "{{ kubeadm_join_command.stdout | trim }} --ignore-preflight-errors=all --v=5\n"
     dest: "{{ kubernetes_join_script }}"
-  delegate_to: localhost
-  become: false  
-  when:
-    - not kubeadm_join_script.stat.exists
-  vars:
-    ansible_ssh_user: "{{ hostvars[groups['kube_masters'][0]].ansible_user }}"
-    ansible_ssh_private_key_file: "{{ hostvars[groups['kube_masters'][0]].ansible_ssh_private_key_file }}"
-
-- name: Append to the end of line 2 in kubeadm-join.sh
-  ansible.builtin.lineinfile:
-    path: "{{ kubernetes_join_script }}"
-    line: "{{ lookup('file', kubernetes_join_script).splitlines()[1] }} --v=5 --ignore-preflight-errors=all"
-    regexp: '^.*$'
-    insertafter: '^.*$'
-    backrefs: yes
-  run_once: true
   delegate_to: localhost
   become: false
 
@@ -112,32 +91,32 @@
 - name: Wait for calico-apiserver deployment to be ready
   ansible.builtin.command: >
     {{ k8s_binary_location }}/kubectl --kubeconfig /home/{{ kubernetes_user }}/.kube/config -n calico-apiserver rollout status deployment/calico-apiserver
-  retries: 10
-  delay: 30
+  retries: 30
+  delay: 10
   register: calico_apiserver_result
   until: calico_apiserver_result.rc == 0
 
 - name: Wait for calico-kube-controllers deployment to be ready
   ansible.builtin.command: >
     {{ k8s_binary_location }}/kubectl --kubeconfig /home/{{ kubernetes_user }}/.kube/config -n calico-system rollout status deployment/calico-kube-controllers
-  retries: 10
-  delay: 30
+  retries: 30
+  delay: 10
   register: calico_kube_controllers_result
   until: calico_kube_controllers_result.rc == 0
 
 - name: Wait for calico-typha deployment to be ready
   ansible.builtin.command: >
     {{ k8s_binary_location }}/kubectl --kubeconfig /home/{{ kubernetes_user }}/.kube/config -n calico-system rollout status deployment/calico-typha
-  retries: 10
-  delay: 30
+  retries: 30
+  delay: 10
   register: calico_typha_result
   until: calico_typha_result.rc == 0
 
 - name: Wait for coredns deployment to be ready
   ansible.builtin.command: >
     {{ k8s_binary_location }}/kubectl --kubeconfig /home/{{ kubernetes_user }}/.kube/config -n kube-system rollout status deployment/coredns
-  retries: 10
-  delay: 30
+  retries: 30
+  delay: 10
   register: coredns_result
   until: coredns_result.rc == 0
 
