@@ -30,6 +30,17 @@
     - "'kube_masters' in group_names"
     - inventory_hostname == groups['kube_masters'][0]
 
+- name: Install Helm on the control plane
+  ansible.builtin.include_tasks:
+    file: "04-helm-install.yaml"
+    apply:
+      tags: [helm]
+  when:
+    - install_helm | default(true)
+    - "'kube_masters' in group_names"
+    - inventory_hostname == groups['kube_masters'][0]
+  tags: [helm]
+
 - name: Kubernetes Worker Node Bootstrap
   ansible.builtin.include_tasks: "03-k8s-worker-bootstrap.yaml"
   when: 

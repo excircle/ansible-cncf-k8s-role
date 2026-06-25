@@ -54,3 +54,12 @@ calico_operator_manifest: "https://raw.githubusercontent.com/projectcalico/calic
 calico_custom_resources_manifest: "https://raw.githubusercontent.com/projectcalico/calico/v3.28.2/manifests/custom-resources.yaml"
 
 wait_hostname_file_change: false
+
+# --- Helm CLI on the control-plane node (kube_masters[0]) ---
+# Installed for imperative helm/kubectl workflows, notably the supervised
+# open-source -> AiStor migration (MIGRATION.md needs Helm >= 3.17). NOT required
+# by the OpenTofu helm provider. Toggle with install_helm.
+install_helm: true
+helm_version: v3.21.2
+helm_install_dir: /usr/local/bin
+helm_arch: "{{ 'amd64' if ansible_architecture == 'x86_64' else ('arm64' if ansible_architecture == 'aarch64' else ansible_architecture) }}"
