@@ -1,0 +1,47 @@
+---
+# Install the Helm CLI on the control-plane node.
+#
+# Helm is NOT required by the OpenTofu `helm` provider (which embeds the Helm SDK
+# and talks to the API server directly). It is installed here to give operators a
+# ready host for imperative `helm`/`kubectl` work -- notably the supervised
+# open-source -> AiStor migration, whose tooling requires Helm >= 3.17
+# (see aistor-operator/MIGRATION.md). Gated by `install_helm` (default true) and
+# run only on kube_masters[0] (see tasks/main.yaml).
+
+- name: Check for an existing Helm install
+  ansible.builtin.command: "{{ helm_install_dir }}/helm version --short"
+  register: helm_installed
+  failed_when: false
+  changed_when: false
+
+- name: Install Helm {{ helm_version }} from the official release tarball
+  when: helm_version not in (helm_installed.stdout | default(''))
+  block:
+    - name: Download Helm {{ helm_version }} tarball
+      ansible.builtin.get_url:
+        url: "https://get.helm.sh/helm-{{ helm_version }}-linux-{{ helm_arch }}.tar.gz"
+        dest: "/tmp/helm-{{ helm_version }}-linux-{{ helm_arch }}.tar.gz"
+        mode: '0644'
+
+    - name: Unpack the Helm tarball
+      ansible.builtin.unarchive:
+        src: "/tmp/helm-{{ helm_version }}-linux-{{ helm_arch }}.tar.gz"
+        dest: /tmp
+        remote_src: true
+
+    - name: Install the Helm binary to {{ helm_install_dir }}
+      ansible.builtin.copy:
+        src: "/tmp/linux-{{ helm_arch }}/helm"
+        dest: "{{ helm_install_dir }}/helm"
+        mode: '0755'
+        remote_src: true
+      become: true
+
+- name: Confirm Helm is callable on the control plane
+  ansible.builtin.command: "{{ helm_install_dir }}/helm version --short"
+  register: helm_final
+  changed_when: false
+
+- name: Show the installed Helm version
+  ansible.builtin.debug:
+    msg: "Helm on {{ inventory_hostname }}: {{ helm_final.stdout }}"
